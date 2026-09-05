@@ -16,11 +16,10 @@ from ecmwf.opendata import Client
 def get_latest_cycle():
     fs = s3fs.S3FileSystem(anon=True)
     now = datetime.utcnow()
-    # Check the last 3 possible cycles
     candidates = [
-        (now.replace(hour=12, minute=0, second=0), '12'),
-        (now.replace(hour=0, minute=0, second=0), '00'),
-        ((now - timedelta(days=1)).replace(hour=12, minute=0, second=0), '12')
+        (now.replace(hour=12, minute=0, second=0, microsecond=0), '12'),
+        (now.replace(hour=0, minute=0, second=0, microsecond=0), '00'),
+        ((now - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0), '12')
     ]
     
     for dt, hr in candidates:
@@ -34,7 +33,6 @@ def get_latest_cycle():
 
 DATE, INIT_HOUR, date_str, year_str, month_day_str = get_latest_cycle()
 
-# Ensure images directory exists
 os.makedirs('images', exist_ok=True)
 
 # ==========================================
@@ -46,6 +44,9 @@ cmap = mcolors.ListedColormap(colors)
 norm = mcolors.BoundaryNorm(clevs, cmap.N)
 proj = ccrs.LambertConformal(central_longitude=-97.5, central_latitude=38.5)
 
+# Absolute Datetime initialization for accurate slicing
+init_dt = datetime.strptime(f"{date_str}{INIT_HOUR}", "%Y%m%d%H")
+
 # ==========================================
 # LOOP DAYS 1 TO 7 (12z to 12z)
 # ==========================================
@@ -53,13 +54,15 @@ for day in range(1, 8):
     print(f"--- Processing Day {day} ---")
     plot_data_dict = {}
     
-    # Calculate target hours for 12z-12z bounds
     if INIT_HOUR == '00':
         start_hr = 12 + (day - 1) * 24
     else:
         start_hr = (day - 1) * 24
         
     target_hours = [start_hr + 6, start_hr + 12, start_hr + 18, start_hr + 24]
+    
+    # Calculate exact absolute times to avoid index shifting
+    target_times = [np.datetime64(init_dt + timedelta(hours=h)) for h in target_hours]
     
     # 1. AWS GRAPHCAST
     fs = s3fs.S3FileSystem(anon=True)
@@ -68,13 +71,15 @@ for day in range(1, 8):
         s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
         
         try:
-            with fs.open(s3_path, 'rb') as s3_file:
-                ds = xr.open_dataset(s3_file, engine='h5netcdf')
-                qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
-                init_time = ds.time.values[0]
-                target_times = [init_time + np.timedelta64(h, 'h') for h in target_hours]
-                qpf_24hr_inches = ds[qpf_var].sel(time=target_times).sum(dim='time') * 39.3701 
-                plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01)
+            # Removed 'with' block to prevent premature file closure during lazy loading
+            s3_file = fs.open(s3_path, 'rb')
+            ds = xr.open_dataset(s3_file, engine='h5netcdf')
+            
+            qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
+            
+            # Sum based on the explicitly calculated absolute times
+            qpf_24hr_inches = ds[qpf_var].sel(time=target_times).sum(dim='time') * 39.3701 
+            plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01)
         except Exception as e:
             print(f"{init_model} failed: {e}")
 
@@ -160,6 +165,5 @@ for day in range(1, 8):
         cbar.set_label('24hr QPF (Inches)', fontsize=13, labelpad=6)
         cbar.ax.set_xticklabels([str(c) for c in clevs], fontsize=10)
 
-    # Save output to images directory
     plt.savefig(f'images/day{day}.png', dpi=150, bbox_inches='tight')
     plt.close(fig)
