@@ -106,11 +106,22 @@ for day in range(1, 8):
                     break
             if start_byte is not None:
                 r_grib = requests.get(base_url + file_name, headers={"Range": f"bytes={start_byte}-{end_byte}"})
-                with open("tmp.grib2", 'wb') as f: f.write(r_grib.content)
+                
+                # UPDATED: Use a unique filename for each hour
+                tmp_file = f"aigfs_tmp_f{fhr:03d}.grib2"
+                with open(tmp_file, 'wb') as f: f.write(r_grib.content)
+                
                 try:
-                    ds_grib = xr.open_dataset("tmp.grib2", engine='cfgrib')
-                    if 'tp' in ds_grib.variables: aigfs_qpf_arrays.append(ds_grib['tp'])
+                    ds_grib = xr.open_dataset(tmp_file, engine='cfgrib')
+                    if 'tp' in ds_grib.variables: 
+                        # UPDATED: Force the array into memory immediately with .load()
+                        aigfs_qpf_arrays.append(ds_grib['tp'].load())
+                    ds_grib.close()
                 except: pass
+                
+                # Cleanup the temporary file to keep the GitHub Actions runner clean
+                if os.path.exists(tmp_file):
+                    os.remove(tmp_file)
     
     if aigfs_qpf_arrays:
         aigfs_24hr = sum(aigfs_qpf_arrays) * 0.0393701
