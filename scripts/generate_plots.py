@@ -148,9 +148,14 @@ for day in range(1, 8):
     except Exception as e:
         plot_data_dict['AIFS'] = f"Error: {str(e)}"
 
-    # ==========================================
+   # ==========================================
     # PLOT GENERATION
     # ==========================================
+    # Calculate the exact valid start and end times for the title
+    valid_start = init_dt + timedelta(hours=start_hr)
+    valid_end = valid_start + timedelta(hours=24)
+    valid_str = f"Valid {valid_start.strftime('%Y-%m-%d %Hz')} to {valid_end.strftime('%Y-%m-%d %Hz')}"
+
     fig, axes = plt.subplots(2, 2, figsize=(18, 12), subplot_kw={'projection': proj})
     axes = axes.flatten()
     mesh = None
@@ -177,13 +182,15 @@ for day in range(1, 8):
                 ax=ax, transform=ccrs.PlateCarree(), x='longitude', y='latitude',
                 cmap=cmap, norm=norm, add_colorbar=False, add_labels=False 
             )
-            ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | Valid 12z-12z", fontsize=13, loc='left', pad=6)
+            # UPDATED TITLE FORMAT
+            ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | {valid_str}", fontsize=13, loc='left', pad=6)
         else:
             # Print the error string directly onto the map
             error_msg = plot_data_dict.get(model_key, "Data Unavailable")
             wrapped_msg = "\n".join(textwrap.wrap(str(error_msg), width=50))
             ax.text(0.5, 0.5, wrapped_msg, transform=ax.transAxes, ha='center', va='center', fontsize=12, color='darkred')
-            ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z", fontsize=13, loc='left', pad=6)
+            # UPDATED TITLE FORMAT FOR ERRORS
+            ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | {valid_str}", fontsize=13, loc='left', pad=6)
             ax.axis('off')
 
     plt.subplots_adjust(hspace=0.18, wspace=0.04, bottom=0.12, top=0.95, left=0.05, right=0.95)
