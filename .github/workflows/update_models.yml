@@ -23,7 +23,7 @@ jobs:
       - name: Install OS-Level Libraries
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y libeccodes0 eccodes-tools
+          sudo apt-get install -y libeccodes0
 
       - name: Install Python Dependencies
         run: |
