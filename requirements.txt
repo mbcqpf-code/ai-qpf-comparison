@@ -2,8 +2,15 @@ s3fs
 xarray
 netCDF4
 h5netcdf
+h5py
 cartopy
 matplotlib
 requests
 cfgrib
+eccodes
 ecmwf-opendata
+numpy
+pandas
+scipy
+cftime
+pillow
