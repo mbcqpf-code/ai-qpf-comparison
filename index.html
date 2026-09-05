@@ -36,7 +36,7 @@
             display: flex; 
             justify-content: center; 
             align-items: center; 
-            height: calc(100vh - 140px); 
+            height: calc(100vh - 160px); 
         }
         
         /* Ensure the image scales proportionally and never exceeds the container */
@@ -55,6 +55,7 @@
     <div class="header">
         <h1>AI Weather Models | 24hr QPF (12z-12z)</h1>
         <p>Models displayed: GraphCast (GFS/IFS), NCEP AIGFS, ECMWF AIFS. (Use <b>←</b> and <b>→</b> arrow keys to navigate)</p>
+        <a href="archive.html" target="_blank" style="display: inline-block; margin-top: 10px; padding: 6px 12px; background: #555; color: white; text-decoration: none; border-radius: 4px; font-size: 14px;">View Archive ↗</a>
     </div>
 
     <div class="controls" id="btn-group">
@@ -72,7 +73,6 @@
     </div>
 
     <script>
-        // Track the current day to allow relative keyboard navigation
         let currentDay = 1;
 
         function changeDay(day) {
