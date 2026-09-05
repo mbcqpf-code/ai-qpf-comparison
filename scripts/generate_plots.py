@@ -10,6 +10,7 @@ import requests
 import os
 import textwrap
 from ecmwf.opendata import Client
+import json
 
 # ==========================================
 # DYNAMIC TIME SYNCING (Match to IFS)
@@ -36,6 +37,9 @@ DATE, INIT_HOUR, date_str, year_str, month_day_str = get_latest_cycle()
 init_dt = datetime.strptime(f"{date_str}{INIT_HOUR}", "%Y%m%d%H")
 
 os.makedirs('images', exist_ok=True)
+# Create the specific archive directory for this run
+archive_dir = f"images/archive/{date_str}{INIT_HOUR}"
+os.makedirs(archive_dir, exist_ok=True)
 
 # ==========================================
 # COLORMAP CONFIGURATION
@@ -201,5 +205,33 @@ for day in range(1, 8):
         cbar.set_label('24hr QPF (Inches)', fontsize=13, labelpad=6)
         cbar.ax.set_xticklabels([str(c) for c in clevs], fontsize=10)
 
+    # Save for main page
     plt.savefig(f'images/day{day}.png', dpi=150, bbox_inches='tight')
+    # Save copy to archive
+    plt.savefig(f'{archive_dir}/day{day}.png', dpi=150, bbox_inches='tight')
     plt.close(fig)
+
+# ==========================================
+# UPDATE ARCHIVE JSON DATABASE
+# ==========================================
+json_path = "images/archive/archive_list.json"
+archive_list = []
+
+# Load existing archive list if it exists
+if os.path.exists(json_path):
+    try:
+        with open(json_path, 'r') as f:
+            archive_list = json.load(f)
+    except:
+        pass
+
+# Add current run if not already in the list
+run_id = f"{date_str}{INIT_HOUR}"
+if run_id not in archive_list:
+    archive_list.append(run_id)
+
+# Sort descending so the newest runs are at the top of the dropdown
+archive_list.sort(reverse=True)
+
+with open(json_path, 'w') as f:
+    json.dump(archive_list, f)
