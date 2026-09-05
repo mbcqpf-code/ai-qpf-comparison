@@ -2,7 +2,7 @@ name: Update AI Model QPF Plots
 
 on:
   schedule:
-    - cron: '0 11,23 * * *' # Runs at 7 AM and 7 PM EDT
+    - cron: '0 10,22 * * *' # Runs at 7 AM and 7 PM EDT
   workflow_dispatch:        # Allows manual run via GitHub button
 
 permissions:
