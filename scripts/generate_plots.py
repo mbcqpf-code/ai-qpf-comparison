@@ -64,24 +64,28 @@ for day in range(1, 8):
     # Calculate exact absolute times to avoid index shifting
     target_times = [np.datetime64(init_dt + timedelta(hours=h)) for h in target_hours]
     
-    # 1. AWS GRAPHCAST
+# 1. AWS GRAPHCAST
     fs = s3fs.S3FileSystem(anon=True)
     for init_model in ['GFS', 'IFS']:
-        model_dir = f"GRAP_v100" if init_model == 'GFS' else f"GRAP_v100_IFS"
+        model_dir = f"GRAP_v100_GFS" if init_model == 'GFS' else f"GRAP_v100_IFS"
         s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
         
         try:
-            # Removed 'with' block to prevent premature file closure during lazy loading
-            s3_file = fs.open(s3_path, 'rb')
-            ds = xr.open_dataset(s3_file, engine='h5netcdf')
-            
-            qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
-            
-            # Sum based on the explicitly calculated absolute times
-            qpf_24hr_inches = ds[qpf_var].sel(time=target_times).sum(dim='time') * 39.3701 
-            plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01)
+            # Re-introduced the 'with' block for proper memory management
+            with fs.open(s3_path, 'rb') as s3_file:
+                ds = xr.open_dataset(s3_file, engine='h5netcdf')
+                
+                qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
+                
+                # Use standard datetime objects and add method='nearest' to prevent timestamp mismatch errors
+                target_times = [init_dt + timedelta(hours=h) for h in target_hours]
+                
+                # MUST include .load() to force the data into memory before the S3 connection closes!
+                qpf_24hr_inches = ds[qpf_var].sel(time=target_times, method='nearest').sum(dim='time') * 39.3701 
+                plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01).load()
+                
         except Exception as e:
-            print(f"{init_model} failed: {e}")
+            print(f"{init_model} failed: {e}"))
 
     # 2. NCEP AIGFS (Byte Range)
     aigfs_qpf_arrays = []
