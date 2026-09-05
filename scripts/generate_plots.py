@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import requests
 import os
+import textwrap
 from ecmwf.opendata import Client
 
 # ==========================================
@@ -32,6 +33,7 @@ def get_latest_cycle():
     raise FileNotFoundError("Could not find recent GraphCast IFS data.")
 
 DATE, INIT_HOUR, date_str, year_str, month_day_str = get_latest_cycle()
+init_dt = datetime.strptime(f"{date_str}{INIT_HOUR}", "%Y%m%d%H")
 
 os.makedirs('images', exist_ok=True)
 
@@ -43,9 +45,6 @@ colors = ['#7CFF4C', '#26A400', '#006300', '#003E94', '#207CE8', '#42A6FF', '#21
 cmap = mcolors.ListedColormap(colors)
 norm = mcolors.BoundaryNorm(clevs, cmap.N)
 proj = ccrs.LambertConformal(central_longitude=-97.5, central_latitude=38.5)
-
-# Absolute Datetime initialization for accurate slicing
-init_dt = datetime.strptime(f"{date_str}{INIT_HOUR}", "%Y%m%d%H")
 
 # ==========================================
 # LOOP DAYS 1 TO 7 (12z to 12z)
@@ -60,31 +59,36 @@ for day in range(1, 8):
         start_hr = (day - 1) * 24
         
     target_hours = [start_hr + 6, start_hr + 12, start_hr + 18, start_hr + 24]
-    
-    # Calculate exact absolute times to avoid index shifting
     target_times = [np.datetime64(init_dt + timedelta(hours=h)) for h in target_hours]
     
-# 1. AWS GRAPHCAST
+    # 1. AWS GRAPHCAST
     fs = s3fs.S3FileSystem(anon=True)
     for init_model in ['GFS', 'IFS']:
-        # UPDATED: Use the exact initialization name for the suffix
-        model_dir = f"GRAP_v100_{init_model}"
-        s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
-        
         try:
-            with fs.open(s3_path, 'rb') as s3_file:
-                ds = xr.open_dataset(s3_file, engine='h5netcdf')
-                
-                qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
-                
-                target_times = [init_dt + timedelta(hours=h) for h in target_hours]
-                
-                # Slicing and loading directly into memory
-                qpf_24hr_inches = ds[qpf_var].sel(time=target_times, method='nearest').sum(dim='time') * 39.3701 
-                plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01).load()
-                
+            # Check directory naming logic
+            if init_model == 'GFS':
+                model_dir = "GRAP_v100"
+                s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
+                # Fallback check if NOAA added the _GFS suffix to the bucket
+                if not fs.exists(s3_path):
+                    model_dir = "GRAP_v100_GFS"
+                    s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
+            else:
+                model_dir = "GRAP_v100_IFS"
+                s3_path = f"s3://noaa-oar-mlwp-data/{model_dir}/{year_str}/{month_day_str}/{model_dir}_{date_str}{INIT_HOUR}_f000_f240_06.nc"
+
+            # Use xarray's native S3 handler to prevent connection closure bugs
+            ds = xr.open_dataset(s3_path, engine='h5netcdf', backend_kwargs={'storage_options': {'anon': True}})
+            qpf_var = [var for var in ds.data_vars if 'precip' in var.lower() or var.lower() in ['tp', 'apcp']][0]
+            
+            # Using .compute() safely loads the math into memory
+            qpf_24hr_inches = ds[qpf_var].sel(time=target_times, method='nearest').sum(dim='time').compute() * 39.3701 
+            plot_data_dict[init_model] = qpf_24hr_inches.where(qpf_24hr_inches >= 0.01)
+            ds.close()
+            
         except Exception as e:
-            print(f"{init_model} failed: {e}")
+            # Store the error so it plots on the map for debugging
+            plot_data_dict[init_model] = f"Error: {str(e)}"
 
     # 2. NCEP AIGFS (Byte Range)
     aigfs_qpf_arrays = []
@@ -107,9 +111,12 @@ for day in range(1, 8):
                     ds_grib = xr.open_dataset("tmp.grib2", engine='cfgrib')
                     if 'tp' in ds_grib.variables: aigfs_qpf_arrays.append(ds_grib['tp'])
                 except: pass
+    
     if aigfs_qpf_arrays:
         aigfs_24hr = sum(aigfs_qpf_arrays) * 0.0393701
         plot_data_dict['AIGFS'] = aigfs_24hr.where(aigfs_24hr >= 0.01)
+    else:
+        plot_data_dict['AIGFS'] = "Error: NOMADS data unavailable or incomplete."
 
     # 3. ECMWF AIFS
     try:
@@ -128,7 +135,7 @@ for day in range(1, 8):
         aifs_inches = qpf_aifs * 0.0393701
         plot_data_dict['AIFS'] = aifs_inches.where(aifs_inches >= 0.01)
     except Exception as e:
-        print(f"AIFS failed: {e}")
+        plot_data_dict['AIFS'] = f"Error: {str(e)}"
 
     # ==========================================
     # PLOT GENERATION
@@ -146,22 +153,30 @@ for day in range(1, 8):
 
     for ax_idx, model_key, title in plot_mapping:
         ax = axes[ax_idx]
-        if model_key in plot_data_dict:
+        
+        # Check if the model loaded successfully (is an xarray DataArray, not an error string)
+        if model_key in plot_data_dict and not isinstance(plot_data_dict[model_key], str):
             ax.set_extent([-125, -67, 24, 50], ccrs.PlateCarree())
             ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
             ax.add_feature(cfeature.BORDERS, linewidth=0.8)
             ax.add_feature(cfeature.STATES, linewidth=0.4, edgecolor='gray')
             ax.add_feature(cfeature.LAKES, alpha=0.5)
+            
             mesh = plot_data_dict[model_key].plot.pcolormesh(
                 ax=ax, transform=ccrs.PlateCarree(), x='longitude', y='latitude',
                 cmap=cmap, norm=norm, add_colorbar=False, add_labels=False 
             )
             ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | Valid 12z-12z", fontsize=13, loc='left', pad=6)
         else:
-            ax.text(0.5, 0.5, "Data Unavailable", transform=ax.transAxes, ha='center', fontsize=14)
+            # Print the error string directly onto the map
+            error_msg = plot_data_dict.get(model_key, "Data Unavailable")
+            wrapped_msg = "\n".join(textwrap.wrap(str(error_msg), width=50))
+            ax.text(0.5, 0.5, wrapped_msg, transform=ax.transAxes, ha='center', va='center', fontsize=12, color='darkred')
+            ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z", fontsize=13, loc='left', pad=6)
             ax.axis('off')
 
     plt.subplots_adjust(hspace=0.18, wspace=0.04, bottom=0.12, top=0.95, left=0.05, right=0.95)
+    
     if mesh:
         cbar_ax = fig.add_axes([0.15, 0.05, 0.70, 0.025])
         cbar = fig.colorbar(mesh, cax=cbar_ax, orientation='horizontal', ticks=clevs)
