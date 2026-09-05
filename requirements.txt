@@ -1,0 +1,7 @@
+s3fs
+xarray[netcdf4,h5netcdf]
+cartopy
+matplotlib
+requests
+cfgrib
+ecmwf-opendata
