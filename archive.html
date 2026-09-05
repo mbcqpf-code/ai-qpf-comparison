@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archive | AI Weather Models</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #eef2f5; margin: 0; padding: 15px; text-align: center; }
+        .header { margin-bottom: 15px; }
+        .header h1 { margin: 0 0 5px 0; font-size: 24px; color: #333; }
+        
+        .controls { margin-bottom: 15px; display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
+        
+        .mode-toggle { background: #e0e6ed; padding: 4px; border-radius: 6px; display: inline-flex; gap: 4px; }
+        .mode-btn { background: transparent; color: #444; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .mode-btn.active { background: #003E94; color: white; }
+
+        select { padding: 8px 12px; font-size: 15px; border-radius: 5px; border: 1px solid #ccc; cursor: pointer; background: white; }
+        
+        .btn-group button { background-color: #003E94; color: white; border: none; padding: 8px 14px; margin: 0 2px; border-radius: 5px; cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .btn-group button:hover { background-color: #207CE8; }
+        .btn-group button.active { background-color: #CD0000; font-weight: bold; }
+        
+        .info-bar { font-size: 13px; color: #666; margin-top: -5px; margin-bottom: 15px; }
+
+        .map-container { display: flex; justify-content: center; align-items: center; height: calc(100vh - 160px); }
+        .map-container img { max-width: 100%; max-height: 100%; object-fit: contain; border: 1px solid #ccc; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 4px; background: white; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Historical Archive: AI 24hr QPF</h1>
+    </div>
+
+    <div class="controls">
+        <!-- View Mode Toggle -->
+        <div class="mode-toggle">
+            <button class="mode-btn active" id="mode-init-btn" onclick="setMode('init')">View by Model Run</button>
+            <button class="mode-btn" id="mode-valid-btn" onclick="setMode('valid')">View by Verification Date (dprog/dt)</button>
+        </div>
+
+        <!-- Dynamic Select Dropdown -->
+        <select id="primary-select" onchange="updatePlot()"></select>
+        
+        <!-- Cycle Filter for Valid Date Mode -->
+        <select id="cycle-select" onchange="updatePlot()" style="display: none;">
+            <option value="00">00z Cycles</option>
+            <option value="12">12z Cycles</option>
+        </select>
+        
+        <!-- Lead Day Buttons -->
+        <div class="btn-group" id="btn-group"></div>
+    </div>
+
+    <div class="info-bar" id="info-bar"></div>
+
+    <div class="map-container">
+        <img id="qpf-map" src="" alt="Select a date to view archive">
+    </div>
+
+    <script>
+        let currentMode = 'init'; // 'init' or 'valid'
+        let currentDay = 1;
+        let availableRuns = [];
+        let validDatesSet = new Set();
+
+        async function loadArchive() {
+            try {
+                const response = await fetch('images/archive/archive_list.json?t=' + new Date().getTime());
+                availableRuns = await response.json();
+                
+                // Process valid dates from available runs
+                availableRuns.forEach(run => {
+                    let yr = parseInt(run.substring(0,4));
+                    let mo = parseInt(run.substring(4,6)) - 1;
+                    let dy = parseInt(run.substring(6,8));
+                    
+                    // For each day 1..7 in this run, calculate the valid date
+                    for (let d = 1; d <= 7; d++) {
+                        let vDate = new Date(Date.UTC(yr, mo, dy + (d - 1)));
+                        let vStr = vDate.toISOString().split('T')[0];
+                        validDatesSet.add(vStr);
+                    }
+                });
+
+                buildDropdown();
+                renderButtons();
+                updatePlot();
+            } catch (error) {
+                console.error("Error loading archive list", error);
+                document.getElementById('qpf-map').alt = "Error loading archive database.";
+            }
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('mode-init-btn').classList.toggle('active', mode === 'init');
+            document.getElementById('mode-valid-btn').classList.toggle('active', mode === 'valid');
+            document.getElementById('cycle-select').style.display = (mode === 'valid') ? 'inline-block' : 'none';
+            
+            currentDay = 1;
+            buildDropdown();
+            renderButtons();
+            updatePlot();
+        }
+
+        function buildDropdown() {
+            const select = document.getElementById('primary-select');
+            select.innerHTML = '';
+
+            if (currentMode === 'init') {
+                availableRuns.forEach(run => {
+                    let opt = document.createElement('option');
+                    opt.value = run;
+                    let yr = run.substring(0,4), mo = run.substring(4,6), dy = run.substring(6,8), hr = run.substring(8,10);
+                    opt.textContent = `Init: ${yr}-${mo}-${dy} ${hr}z`;
+                    select.appendChild(opt);
+                });
+            } else {
+                // Sort valid dates descending
+                let sortedValid = Array.from(validDatesSet).sort().reverse();
+                sortedValid.forEach(vDate => {
+                    let opt = document.createElement('option');
+                    opt.value = vDate;
+                    opt.textContent = `Valid Date: ${vDate} (12z-12z)`;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        function renderButtons() {
+            const btnGroup = document.getElementById('btn-group');
+            btnGroup.innerHTML = '';
+
+            for (let d = 1; d <= 7; d++) {
+                let btn = document.createElement('button');
+                btn.textContent = (currentMode === 'init') ? `Day ${d}` : `Day ${d} Lead`;
+                if (d === currentDay) btn.classList.add('active');
+                btn.onclick = () => changeDay(d);
+                btnGroup.appendChild(btn);
+            }
+        }
+
+        function changeDay(day) {
+            currentDay = day;
+            const buttons = document.querySelectorAll('.btn-group button');
+            buttons.forEach((btn, idx) => {
+                btn.classList.toggle('active', idx + 1 === day);
+            });
+            updatePlot();
+        }
+
+        function updatePlot() {
+            const primaryVal = document.getElementById('primary-select').value;
+            if (!primaryVal) return;
+
+            let imagePath = '';
+            let infoText = '';
+
+            if (currentMode === 'init') {
+                imagePath = `images/archive/${primaryVal}/day${currentDay}.png`;
+                infoText = `Showing Day ${currentDay} forecast for model run initialized at ${primaryVal.substring(0,4)}-${primaryVal.substring(4,6)}-${primaryVal.substring(6,8)} ${primaryVal.substring(8,10)}z.`;
+            } else {
+                // Valid Date Mode: Compute required Init Date
+                // Formula: Init Date = Valid Date - (Day - 1)
+                let cycle = document.getElementById('cycle-select').value;
+                let vParts = primaryVal.split('-');
+                let vDate = new Date(Date.UTC(parseInt(vParts[0]), parseInt(vParts[1]) - 1, parseInt(vParts[2])));
+                
+                // Subtract (currentDay - 1) days
+                vDate.setUTCDate(vDate.getUTCDate() - (currentDay - 1));
+                
+                let iYr = vDate.getUTCFullYear();
+                let iMo = String(vDate.getUTCMonth() + 1).padStart(2, '0');
+                let iDy = String(vDate.getUTCDate()).padStart(2, '0');
+                
+                let reqRun = `${iYr}${iMo}${iDy}${cycle}`;
+                imagePath = `images/archive/${reqRun}/day${currentDay}.png`;
+                infoText = `Valid Target: ${primaryVal} 12z–12z | Showing Day ${currentDay} lead (Init: ${iYr}-${iMo}-${iDy} ${cycle}z).`;
+            }
+
+            document.getElementById('info-bar').textContent = infoText;
+
+            // Load Image with graceful missing fallback
+            const img = document.getElementById('qpf-map');
+            img.onerror = function() {
+                img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="100%" height="100%" fill="%23ffffff"/><text x="50%" y="50%" font-family="sans-serif" font-size="20" fill="%23cc0000" text-anchor="middle">Archive image not available for this lead time / cycle combination.</text></svg>';
+            };
+            img.src = imagePath;
+        }
+
+        // Arrow Key Navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'ArrowRight' && currentDay < 7) changeDay(currentDay + 1);
+            if (event.key === 'ArrowLeft' && currentDay > 1) changeDay(currentDay - 1);
+        });
+
+        window.onload = loadArchive;
+    </script>
+</body>
+</html>
