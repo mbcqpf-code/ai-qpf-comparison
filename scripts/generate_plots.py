@@ -205,11 +205,13 @@ for day in range(1, 8):
         cbar.set_label('24hr QPF (Inches)', fontsize=13, labelpad=6)
         cbar.ax.set_xticklabels([str(c) for c in clevs], fontsize=10)
 
-    # Save for main page
-    plt.savefig(f'images/day{day}.png', dpi=150, bbox_inches='tight')
-    # Save copy to archive
-    plt.savefig(f'{archive_dir}/day{day}.png', dpi=150, bbox_inches='tight')
-    plt.close(fig)
+    # Save for main page (removed bbox_inches='tight')
+    plt.savefig(f'images/day{day}.png', dpi=150)
+    
+    # Save copy to archive (removed bbox_inches='tight')
+    plt.savefig(f'{archive_dir}/day{day}.png', dpi=150)
+    
+    plt.close(fig))
 
 # ==========================================
 # UPDATE ARCHIVE JSON DATABASE
