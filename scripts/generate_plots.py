@@ -211,7 +211,7 @@ for day in range(1, 8):
     # Save copy to archive (removed bbox_inches='tight')
     plt.savefig(f'{archive_dir}/day{day}.png', dpi=150)
     
-    plt.close(fig))
+    plt.close(fig)
 
 # ==========================================
 # UPDATE ARCHIVE JSON DATABASE
