@@ -143,7 +143,8 @@ for day in range(1, 8):
         ds_aifs = xr.open_dataset("aifs.grib2", engine='cfgrib', backend_kwargs={'filter_by_keys': {'shortName': 'tp'}})
         
         if s1 == 0:
-            qpf_aifs = ds_aifs['tp'].sel(step=np.timedelta64(s2, 'h'))
+            # FIX: Only one step exists, so 'step' is a scalar. Grab the variable directly without .sel()
+            qpf_aifs = ds_aifs['tp']
         else:
             qpf_aifs = ds_aifs['tp'].sel(step=np.timedelta64(s2, 'h')) - ds_aifs['tp'].sel(step=np.timedelta64(s1, 'h'))
             
