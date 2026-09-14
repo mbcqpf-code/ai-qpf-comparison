@@ -190,13 +190,26 @@ for day in range(1, 8):
             # UPDATED TITLE FORMAT
             ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | {valid_str}", fontsize=13, loc='left', pad=6)
         else:
-            # Print the error string directly onto the map
+            # 1. Keep the exact same map boundaries so the bounding box never changes
+            ax.set_extent([-125, -67, 24, 50], ccrs.PlateCarree())
+            ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
+            ax.add_feature(cfeature.BORDERS, linewidth=0.8)
+            ax.add_feature(cfeature.STATES, linewidth=0.4, edgecolor='gray')
+            ax.add_feature(cfeature.LAKES, alpha=0.5)
+
+            # 2. Format the error message
             error_msg = plot_data_dict.get(model_key, "Data Unavailable")
             wrapped_msg = "\n".join(textwrap.wrap(str(error_msg), width=50))
-            ax.text(0.5, 0.5, wrapped_msg, transform=ax.transAxes, ha='center', va='center', fontsize=12, color='darkred')
-            # UPDATED TITLE FORMAT FOR ERRORS
+            
+            # 3. Print the text WITH a semi-transparent white box so it's readable over the map lines
+            ax.text(0.5, 0.5, wrapped_msg, transform=ax.transAxes, ha='center', va='center', 
+                    fontsize=12, color='darkred', weight='bold', zorder=10,
+                    bbox=dict(facecolor='white', alpha=0.85, edgecolor='darkred', boxstyle='round,pad=0.5'))
+            
+            # 4. Keep the exact same title
             ax.set_title(f"{title}\nInit: {date_str} {INIT_HOUR}z | {valid_str}", fontsize=13, loc='left', pad=6)
-            ax.axis('off')
+            
+            # REMOVED: ax.axis('off')
 
     plt.subplots_adjust(hspace=0.18, wspace=0.04, bottom=0.12, top=0.95, left=0.05, right=0.95)
     
